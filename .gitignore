@@ -1,7 +1,18 @@
+#my gitignores
+
+# not uploading any problem data
+code_workspace/
+
+#vscode settings
+.vscode/
+
+#ALL OF THE BELOW STUFF IS PROVIDED BY GITHUBS BASIC PYTHON GITIGNORE SO ANYTHING THAT SHOULDN'T BE THERE SHOULD BE REMOVED DYNAMICALLY
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
 *$py.class
+
 
 # C extensions
 *.so
