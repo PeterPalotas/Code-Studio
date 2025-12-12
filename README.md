@@ -7,6 +7,8 @@ My main inspiration for this project came while traveling; I wanted to practice 
 
 ![Python](https://img.shields.io/badge/Python-3.13%2B-blue) ![Flask](https://img.shields.io/badge/Backend-Flask-green) ![VS Code](https://img.shields.io/badge/Editor-VS_Code-007acc) ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
+<img width="2467" height="1078" alt="image" src="https://github.com/user-attachments/assets/14c3c78c-0062-4bd2-a8f1-3b27158c28e7" />
+
 ## Overview
 
 Code Studio creates a bridge between problem definitions and your local IDE. Instead of copy pasting code into a browser, it can be done all in one locally hosted page.
