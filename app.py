@@ -55,17 +55,8 @@ def index():
     #when the root is visited i just want to pass the downloaded slugs to the front end
     downloaded = get_cached_slugs()
     return render_template('index.html', problems=PROBLEM_SLUGS, downloaded=downloaded)
-
 @app.route('/api/load/<slug>')
 def load_problem(slug):
-    """
-    my smart load system:
-    check if slug.json exists locally.
-    if YES: Load from disk this is for making the project work offline
-    if NO: Fetch the problem online and save  to disk then return
-    """
-
-
     try:
         if not os.path.exists(backend.WORKSPACE_DIR):
             os.makedirs(backend.WORKSPACE_DIR)
@@ -84,20 +75,23 @@ def load_problem(slug):
                     data = json.load(f)
                 source = "Local Cache"
             except:
-                pass # If corrupt, fall back to network
+                pass# if it doesnt have it, fallback to network
 
-        #if it doesnt have it, fallback to network
+        #falling back to network ere
         if not data:
             data = backend.fetch_problem(slug)
             if not data:
                 return jsonify({"error": "Problem not found"}), 404
             
-            #save it to the cache
+            #fix from prev commit: get solution while we have internet
+            community_md = backend.fetch_community_solution(slug)
+            data['community_solution'] = community_md 
+            
+            # save the problem AND solution combined to the json cache
             with open(json_path, 'w') as f:
                 json.dump(data, f)
 
-        # finally, double check if the python file exists
-        #(even if we have JSON, the user might have deleted the .py file (whoops :D))
+        #handle the starter python file
         snippet = next((s['code'] for s in data['codeSnippets'] if s['langSlug'] == 'python3'), None)
         
         msg = f"Loaded from {source}"
@@ -115,8 +109,10 @@ def load_problem(slug):
             "message": msg,
             "testcases_raw": data['exampleTestcases']
         })
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 
 @app.route('/api/open', methods=['POST'])
 def open_vscode():
@@ -149,6 +145,7 @@ def run_tests():
     with open(filepath, 'r') as f:
         code = f.read()
 
+    #determine method name and arg count to group test cases correctly
     method_name, arg_count = backend.analyze_code_structure(code)
     if method_name == "unknown":
         return jsonify({"output": "Error: could not find 'class Solution' or method."})
@@ -156,15 +153,33 @@ def run_tests():
     test_cases = backend.parse_test_inputs(raw_testcases, arg_count)
     logs.append(f"Running {len(test_cases)} test cases...")
 
-    logs.append("Fetching community solution...")
-    md_content = backend.fetch_community_solution(slug)
+    # OFFLINE FIX FROM FIRST COMMIT. now the community olutions are saved locally
+    filename_base = slug.replace('-', '_')
+    json_path = os.path.join(backend.WORKSPACE_DIR, f"{filename_base}.json")
+    
+    md_content = None
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, 'r') as f:
+                cached_data = json.load(f)
+                
+                md_content = cached_data.get('community_solution')
+        except Exception as e:
+            logs.append(f"Warning: Could not read cache ({e})")
+
+    #o if it's missing from cache, try the network (online mode)
+    if not md_content:
+        logs.append("Community solution not in cache. Fetching from network...")
+        md_content = backend.fetch_community_solution(slug)
+    
     reference_code = backend.extract_code_block(md_content) if md_content else None
     
     if reference_code:
-        logs.append("Ground Truth loaded.")
+        logs.append("Ground Truth loaded from cache.")
     else:
-        logs.append("Warning: No Ground Truth available.")
+        logs.append("Warning: No Ground Truth available (Offline & no cache).")
 
+    #generate and execute the test script
     full_script = backend.generate_test_script(filepath, method_name, test_cases, reference_code)
 
     try:
@@ -175,17 +190,32 @@ def run_tests():
         return jsonify({"output": output})
     except Exception as e:
         return jsonify({"output": f"Execution Error: {e}"})
+    
 
 @app.route('/api/solution/<slug>')
 def get_community_solution(slug):
     try:
-        md_content = backend.fetch_community_solution(slug)
+        #look for the local JSON file first
+        filename_base = slug.replace('-', '_')
+        json_path = os.path.join(backend.WORKSPACE_DIR, f"{filename_base}.json")
+        
+        md_content = None
+        if os.path.exists(json_path):
+            with open(json_path, 'r') as f:
+                cached_data = json.load(f)
+
+                md_content = cached_data.get('community_solution')
+
         if not md_content:
-            return jsonify({"error": "Could not fetch solution."}), 404
+            md_content = backend.fetch_community_solution(slug)
+            
+        if not md_content:
+            return jsonify({"error": "Could not fetch solution offline."}), 404
+            
         code_block = backend.extract_code_block(md_content)
         return jsonify({
             "raw_markdown": md_content,
-            "clean_code": code_block if code_block else "Code extraction failed,(this seems to ahppen with some questions, and im working on a fix for this)"
+            "clean_code": code_block if code_block else "Code extraction failed."
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

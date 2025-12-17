@@ -184,10 +184,10 @@ if __name__ == "__main__":
 
                 if result_user == expected_output:
                     #I dont know if my cool tick and cross emojis will work on windows too or only on linux
-                    status = "✅ PASS"
+                    status = "PASS"
                     passed_count += 1
                 else:
-                    status = "❌ FAIL"
+                    status = "FAIL"
             
             #print logs (add this to flask page later)
             print(f"Test Case {{i+1}}: {{status}}")
@@ -325,87 +325,73 @@ def main():
         os.makedirs(WORKSPACE_DIR)
 
     slug = input("Enter problem slug (e.g., two-sum): ").strip() or "two-sum"
-    print(f"[*] Downloading {slug}...")
     
-    data = fetch_problem(slug)
-    if not data:
-        print("[!] Problem not found.")
-        return
-
-    snippet = next((s['code'] for s in data['codeSnippets'] if s['langSlug'] == 'python3'), None)
-    if not snippet:
-        print("[!]no python3 snippet available. :(")
-        return
 
     filename = f"{slug.replace('-', '_')}.py"
     filepath = os.path.join(WORKSPACE_DIR, filename)
+    cache_path = os.path.join(WORKSPACE_DIR, f"{slug}_data.json")
+
+
+    if os.path.exists(cache_path):
+        print(f"[*] Loading {slug} from local cache...")
+        with open(cache_path, "r") as f:
+            cached_data = json.load(f)
+            data = cached_data["problem"]
+            md_content = cached_data["reference_md"]
+    else:
+        print(f"[*] Downloading {slug} (Online Mode)...")
+        data = fetch_problem(slug)
+        if not data:
+            print("[!] Problem not found.")
+            return
+        
+        md_content = fetch_community_solution(slug)
+        
+        #save to cache so it works offline next time
+        with open(cache_path, "w") as f:
+            json.dump({"problem": data, "reference_md": md_content}, f)
+        print(f"[*] Saved problem data to {cache_path}")
+
+    # --- STEP 2: SETUP USER FILE ---
+    snippet = next((s['code'] for s in data['codeSnippets'] if s['langSlug'] == 'python3'), None)
+    if not snippet:
+        print("[!] No python3 snippet available.")
+        return
 
     if not os.path.exists(filepath):
         with open(filepath, "w") as f:
             f.write(snippet)
-        print(f"[*]Created {filepath}")
+        print(f"[*] Created {filepath}")
     else:
-        print(f"[*] File: {filepath} already exists. Using it.")
+        print(f"[*] File: {filepath} already exists.")
 
-    try:
-        print("[*] Opening VS Code...")
-        #untested on windows, no promises for this working :O
-        if sys.platform == "win32":
-            subprocess.run(f"cmd /c {VSCODE_BIN} {filepath}", shell=True)
-        else:
-            subprocess.run([VSCODE_BIN, filepath])
-    except FileNotFoundError:
-        print(f"[!] Could not find '{VSCODE_BIN}'. Please open {filepath} manually.")
-
-
+    #prepare test logic
     method_name, arg_count = analyze_code_structure(snippet)
     test_cases = parse_test_inputs(data['exampleTestcases'], arg_count)
-
-    #debugging ground truth
-    print("\n[*]fetching community solution for verification...")
-    md_content = fetch_community_solution(slug)
     
     reference_code = None
     if md_content:
         reference_code = extract_code_block(md_content)
-        if reference_code:
-            print("[*]the ground truth solution loaded successfully!")
+
+    #ui / runner
+    try:
+        if sys.platform == "win32":
+            subprocess.run(f"cmd /c {VSCODE_BIN} {filepath}", shell=True)
         else:
-            print("[!] Downloaded solution, but regex failed to find code.")
-            print(f"[DEBUG] Raw Content Snippet: {repr(md_content[:200])}")
-    else:
-        print("[!]Failed to download any community solution. Sorry :(")
+            subprocess.run([VSCODE_BIN, filepath])
+    except:
+        pass
 
-    # ----------------------------------
-
-    #THIS IS REDUNDANT AFTER THE UI BUT IM KEEPING IT HERE FOR TESTING
     print("\n" + "="*40)
     print(f" PROBLEM: {data['questionId']}. {data['title']}")
-    print(f" FUNCTION: {method_name}()")
+    print(f" MODE: {'OFFLINE' if os.path.exists(cache_path) else 'ONLINE'}")
     print("="*40)
-    print("\nInstructions:")
-    print("1. Write your code in VS Code.")
-    print("2. Save the file (Ctrl+S).")
-    print("3. Press ENTER here to run tests.")
-    print("4. Type 'q' to quit.")
 
     while True:
-        cmd = input("\n[Run] > ")
-        if cmd.lower() == 'q':
-            break
+        cmd = input("\n[Run] (q to quit) > ")
+        if cmd.lower() == 'q': break
 
-        print("[*] Running tests...")
-        
         full_script = generate_test_script(filepath, method_name, test_cases, reference_code)
-        
-        try:
-            res = subprocess.run([sys.executable, "-c", full_script], capture_output=True, text=True)
-            print(res.stdout)
-            if res.stderr:
-                print("RUNTIME ERROR:")
-                print(res.stderr)
-        except Exception as e:
-            print(f"Error running subprocess: {e}")
-
-if __name__ == "__main__":
-    main()
+        res = subprocess.run([sys.executable, "-c", full_script], capture_output=True, text=True)
+        print(res.stdout)
+        if res.stderr: print(f"RUNTIME ERROR:\n{res.stderr}")
