@@ -25,9 +25,9 @@ If/When I next choose to work on the project. Below are the planned features and
 
 ### Core Functionality
 - [ ] **Multi-Language Support:** Add support for **JavaScript/Node.js** execution (currently Python only).
-- [ ] **Dynamic Problem Fetching:** Remove hardcoded "Blind 75" slugs and allow fetching any problem by URL or ID.
-- [ ] **Search & Filtering:** Add a search bar and filter problems by Difficulty (Easy/Med/Hard) or Topic (DP, Graphs, Arrays).
-- [ ] **Custom Test Cases:** Add the ability for users to input their own custom test cases via the UI to cover edge cases not provided by the default set.
+- [x] **Dynamic Problem Fetching:** Remove hardcoded "Blind 75" slugs and allow fetching any problem by URL or ID.
+- [x] **Search & Filtering:** Add a search bar and filter problems by Difficulty (Easy/Med/Hard) or Topic (DP, Graphs, Arrays).
+- [x] **Custom Test Cases:** Add the ability for users to input their own custom test cases via the UI to cover edge cases not provided by the default set.
 
 
 ## 📦 Installation
