@@ -121,11 +121,18 @@
 
             <div id="bottom-panel">
                 <div class="tabs">
-                    <div class="tab active" onclick="switchTab('console')">Output Console</div>
+                    <div class="tab active" onclick="switchTab('console')">Testcase & Console</div>
                     <div class="tab" onclick="switchTab('solution')">Community Solution</div>
                 </div>
 
                 <div id="console-tab" class="tab-content active">
+                    <div id="testcase-container" style="padding: 10px; border-bottom: 1px solid var(--border); background: var(--bg-darker);">
+                        <div id="testcase-tabs" style="display: flex; gap: 5px; margin-bottom: 10px; overflow-x: auto;">
+                            <button onclick="addTestCase()" style="background: #333; color: white; border: 1px solid #444; padding: 2px 8px; cursor: pointer;">+</button>
+                        </div>
+                        <div id="testcase-inputs">
+                            </div>
+                    </div>
                     <div id="console-output">// Test results will appear here...</div>
                 </div>
 
@@ -142,73 +149,107 @@
     </div>
 
     <script>
+
+
+
+        
         let currentSlug = null;
         let currentFilepath = null;
-        let currentTestCases = null;
+        let testCases = []; 
+        let activeTestCaseIndex = 0;
+        let argCount = 0;
 
-        //core functions 
         async function loadProblem(slug, element) {
-            //UI selection
             document.querySelectorAll('.problem-item').forEach(el => el.classList.remove('active'));
             element.classList.add('active');
 
-            //reset UI text
             document.getElementById('problem-title').innerText = "Loading...";
             document.getElementById('description-panel').innerHTML = "<p>Loading...</p>";
             document.getElementById('console-output').innerText = "";
-            document.getElementById('btn-open').disabled = true;
-            document.getElementById('btn-run').disabled = true;
             
-            //hide code view
-            document.getElementById('solution-view').style.display = 'none';
-            document.getElementById('solution-code').innerText = "";
-            
-            const overlay = document.getElementById('solution-overlay');
-            overlay.style.display = 'flex';
-            
-            overlay.innerHTML = `<button class="btn btn-orange" onclick="revealSolution()">Click to Reveal Solution</button>`;
-            // -------------------------------------------
-
             try {
                 const response = await fetch(`/api/load/${slug}`);
                 const data = await response.json();
-
                 if (data.error) throw new Error(data.error);
 
                 currentSlug = slug;
                 currentFilepath = data.filepath;
-                currentTestCases = data.testcases_raw;
+                
+                const lines = data.testcases_raw.trim().split('\n');
+                
+               testCases = lines.map(line => [JSON.parse(line)]); 
+                activeTestCaseIndex = 0;
 
-                //update UI
                 document.getElementById('problem-title').innerText = data.title;
                 document.getElementById('description-panel').innerHTML = data.content;
-                document.getElementById('console-output').innerText = `[System] ${data.message}\n[System] Ready.`;
-                
-                //dynamically add the green tick so people dont have to keep refreeshing when downloading
-                const iconSpan = element.querySelector('.status-icon');
-                //Idk if the icon will work on windows because i only tested on Linuxxx
-                if (iconSpan) iconSpan.innerText = "✔";
-
                 document.getElementById('btn-open').disabled = false;
                 document.getElementById('btn-run').disabled = false;
+
+                renderTabs();
+                renderInputs();
 
             } catch (err) {
                 document.getElementById('description-panel').innerHTML = `<p style="color:#ff6b6b">Error: ${err.message}</p>`;
             }
         }
 
-        async function openVSCode() {
-            if (!currentFilepath) return;
-            await fetch('/api/open', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filepath: currentFilepath })
+        function renderTabs() {
+            const container = document.getElementById('testcase-tabs');
+            const plusBtn = `<button onclick="addTestCase()" style="background: #333; color: white; border: 1px solid #444; padding: 2px 8px; cursor: pointer;">+</button>`;
+            
+            let html = "";
+            testCases.forEach((_, i) => {
+                const activeStyle = (i === activeTestCaseIndex) ? "color: white; border-bottom: 2px solid var(--accent);" : "color: #888;";
+                html += `<button onclick="setActiveCase(${i})" style="background: #252526; ${activeStyle} border: 1px solid #444; padding: 4px 10px; cursor: pointer; font-size: 11px;">Case ${i+1}</button>`;
             });
+            
+            container.innerHTML = html + plusBtn;
+        }
+
+        function setActiveCase(index) {
+            activeTestCaseIndex = index;
+            renderTabs();
+            renderInputs();
+        }
+
+        function renderInputs() {
+            const container = document.getElementById('testcase-inputs');
+            container.innerHTML = '';
+            const currentCase = testCases[activeTestCaseIndex];
+            
+            currentCase.forEach((val, argIdx) => {
+                const label = document.createElement('div');
+                label.innerText = `Argument ${argIdx + 1}`;
+                label.style = "font-size: 10px; color: #666; margin-bottom: 2px;";
+                
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = JSON.stringify(val);
+                input.style = "width: 100%; background: #1a1a1a; color: #4caf50; border: 1px solid #444; font-family: monospace; padding: 5px; margin-bottom: 10px;";
+                
+                input.onchange = (e) => {
+                    try {
+                        testCases[activeTestCaseIndex][argIdx] = JSON.parse(e.target.value);
+                    } catch(err) {
+                        alert("Invalid JSON input!");
+                    }
+                };
+                container.appendChild(label);
+                container.appendChild(input);
+            });
+        }
+
+        function addTestCase() {
+            if (testCases.length === 0) return;
+            const newCase = JSON.parse(JSON.stringify(testCases[0])); 
+            testCases.push(newCase);
+            activeTestCaseIndex = testCases.length - 1;
+            renderTabs();
+            renderInputs();
         }
 
         async function runTests() {
             if (!currentFilepath) return;
-            switchTab('console');
             const out = document.getElementById('console-output');
             out.innerText = "[System] Running tests...\n";
 
@@ -219,7 +260,7 @@
                     body: JSON.stringify({ 
                         slug: currentSlug,
                         filepath: currentFilepath,
-                        testcases: currentTestCases
+                        custom_testcases: testCases 
                     })
                 });
                 const data = await response.json();
@@ -228,6 +269,8 @@
                 out.innerText += "\n[Error] " + err;
             }
         }
+
+
 
         async function revealSolution() {
             if (!currentSlug) return;
@@ -272,6 +315,9 @@
                 document.getElementById('solution-tab').classList.add('active');
             }
         }
+
+
+        
     </script>
 </body>
 </html>

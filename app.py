@@ -129,13 +129,17 @@ def open_vscode():
         return jsonify({"status": "opened"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 
 @app.route('/api/run', methods=['POST'])
 def run_tests():
     data = request.json
     slug = data.get('slug')
     filepath = data.get('filepath')
-    raw_testcases = data.get('testcases')
+    
+    #we now expect an array of test cases
+    #example: [[ [1,2,3], 5 ], [ [3,4,5], 9 ]]
+    test_cases = data.get('custom_testcases') 
 
     if not filepath or not os.path.exists(filepath):
         return jsonify({"output": "Error: File not found."})
@@ -146,14 +150,13 @@ def run_tests():
         code = f.read()
 
     #determine method name and arg count to group test cases correctly
-    method_name, arg_count = backend.analyze_code_structure(code)
+    method_name, _ = backend.analyze_code_structure(code)
     if method_name == "unknown":
         return jsonify({"output": "Error: could not find 'class Solution' or method."})
 
-    test_cases = backend.parse_test_inputs(raw_testcases, arg_count)
     logs.append(f"Running {len(test_cases)} test cases...")
 
-    # OFFLINE FIX FROM FIRST COMMIT. now the community olutions are saved locally
+    #OFFLINE FIX FROM FIRST COMMIT. now the community olutions are saved locally
     filename_base = slug.replace('-', '_')
     json_path = os.path.join(backend.WORKSPACE_DIR, f"{filename_base}.json")
     
@@ -162,7 +165,6 @@ def run_tests():
         try:
             with open(json_path, 'r') as f:
                 cached_data = json.load(f)
-                
                 md_content = cached_data.get('community_solution')
         except Exception as e:
             logs.append(f"Warning: Could not read cache ({e})")
@@ -171,7 +173,6 @@ def run_tests():
     if not md_content:
         logs.append("Community solution not in cache. Fetching from network...")
         md_content = backend.fetch_community_solution(slug)
-    
     reference_code = backend.extract_code_block(md_content) if md_content else None
     
     if reference_code:
@@ -180,13 +181,17 @@ def run_tests():
         logs.append("Warning: No Ground Truth available (Offline & no cache).")
 
     #generate and execute the test script
+    #Also custum test cases!! yay
     full_script = backend.generate_test_script(filepath, method_name, test_cases, reference_code)
 
     try:
+        
         res = subprocess.run([sys.executable, "-c", full_script], capture_output=True, text=True)
         output = "\n".join(logs) + "\n\n" + res.stdout
+        
         if res.stderr:
             output += "\nRUNTIME ERROR:\n" + res.stderr
+            
         return jsonify({"output": output})
     except Exception as e:
         return jsonify({"output": f"Execution Error: {e}"})

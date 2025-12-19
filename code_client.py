@@ -91,17 +91,24 @@ def analyze_code_structure(code):
 
 
 def parse_test_inputs(raw_txt, args_count):
+    if not raw_txt: return []
     #hlper function that parses newline separated JSON strings into grouped lists
-    lines = raw_txt.strip().split('\n')
+    lines = [line.strip() for line in raw_txt.split('\n') if line.strip()]
     cases = []
     current_case = []
+    
     for line in lines:
         try:
-            current_case.append(json.loads(line))
+
+            val = json.loads(line)
+            current_case.append(val)
+            
             if len(current_case) == args_count:
                 cases.append(current_case)
                 current_case = []
-        except: pass
+        except json.JSONDecodeError:
+            continue 
+            
     return cases
 
 
