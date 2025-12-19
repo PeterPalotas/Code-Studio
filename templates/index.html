@@ -87,12 +87,26 @@
         }
         
         .blur-overlay { display: flex; align-items: center; justify-content: center; height: 100%; background: rgba(0,0,0,0.5); position: absolute; top: 0; left: 0; width: 100%; }
+    
+        #problem-search:focus {
+            outline: 1px solid var(--accent);
+            border-color: var(--accent);
+        }
+
+        #problem-search::placeholder {
+            color: #666;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
 
     <div id="sidebar">
         <div class="sidebar-header">Problems</div>
+        <div style="padding: 10px; border-bottom: 1px solid var(--border);">
+            <input type="text" id="problem-search" placeholder="Search problems..." 
+                style="width: 100%; padding: 8px; background: #1a1a1a; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; font-size: 13px;">
+        </div>
         <div id="problem-list">
             {% for slug in problems %}
                 <div class="problem-item" id="item-{{ slug }}" onclick="loadProblem('{{ slug }}', this)">
@@ -316,6 +330,24 @@
             }
         }
 
+        document.addEventListener('DOMContentLoaded', () => {
+        const searchInput = document.getElementById('problem-search');
+        const problemItems = document.querySelectorAll('.problem-item');
+
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+
+            problemItems.forEach(item => {
+                const slug = item.textContent.toLowerCase();
+                
+                if (slug.includes(query)) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+    });
 
         
     </script>
