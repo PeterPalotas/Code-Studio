@@ -32,21 +32,15 @@ PROBLEM_SLUGS = [
 ]
 
 def get_cached_slugs():
-    #Returns a set of slugs that have their JSON data saved locally, used for caching and offline functionality
     if not os.path.exists(backend.WORKSPACE_DIR):
         return set()
     
-    #Below look for .json files (e.g., two_sum.json)
     files = os.listdir(backend.WORKSPACE_DIR)
-
-
-    #convert filename "two_sum.json" to slug "two-sum"...
-    #for now ill just iterate our PROBLEM_SLUGS and check if their filename exists. this is a temp
-    #solution until I implement dynamic slugs
     downloaded = set()
-    for slug in PROBLEM_SLUGS:
-        filename = f"{slug.replace('-', '_')}.json"
-        if filename in files:
+    
+    for filename in files:
+        if filename.endswith(".json"):
+            slug = filename.replace(".json", "").replace("_", "-")
             downloaded.add(slug)
     return downloaded
 
@@ -55,6 +49,40 @@ def index():
     #when the root is visited i just want to pass the downloaded slugs to the front end
     downloaded = get_cached_slugs()
     return render_template('index.html', problems=PROBLEM_SLUGS, downloaded=downloaded)
+
+@app.route('/api/fetch_new/<slug>')
+def fetch_new_problem(slug):
+    #fetch a problem not in the list
+    try:
+        return load_problem(slug)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+
+@app.route('/api/problems')
+def get_all_problems():
+    try:
+        downloaded = get_cached_slugs()
+        #try fecthing from online
+        all_problems = backend.fetch_all_problems(limit=3000) 
+        
+        #if fecthing fails at least return downloaded ones
+        if not all_problems:
+            all_problems = [{"title": s.replace("-", " ").title(), "titleSlug": s, "difficulty": "Unknown"} 
+                            for s in downloaded]
+        
+        return jsonify({
+            "all": all_problems,
+            "downloaded": list(downloaded)
+        })
+    except Exception as e:
+        downloaded = list(get_cached_slugs())
+        return jsonify({
+            "all": [{"title": s, "titleSlug": s, "difficulty": "Cached"} for s in downloaded],
+            "downloaded": downloaded
+        })
+
+
 @app.route('/api/load/<slug>')
 def load_problem(slug):
     try:
@@ -102,16 +130,23 @@ def load_problem(slug):
         else:
             msg += f" (Using existing {filename_base}.py)"
 
+        snippet = next((s['code'] for s in data['codeSnippets'] if s['langSlug'] == 'python3'), None)
+        method_name, arg_count = backend.analyze_code_structure(snippet)
+
         return jsonify({
             "title": data['title'],
             "content": data['content'],
             "filepath": py_path,
             "message": msg,
-            "testcases_raw": data['exampleTestcases']
+            "testcases_raw": data['exampleTestcases'],
+            "arg_count": arg_count  
         })
+
         
+    
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
     
 
 @app.route('/api/open', methods=['POST'])
@@ -130,33 +165,26 @@ def open_vscode():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
-
 @app.route('/api/run', methods=['POST'])
 def run_tests():
     data = request.json
     slug = data.get('slug')
     filepath = data.get('filepath')
-    
-    #we now expect an array of test cases
-    #example: [[ [1,2,3], 5 ], [ [3,4,5], 9 ]]
-    test_cases = data.get('custom_testcases') 
+    test_cases = data.get('custom_testcases')
 
     if not filepath or not os.path.exists(filepath):
         return jsonify({"output": "Error: File not found."})
 
+
     logs = []
-    
     with open(filepath, 'r') as f:
         code = f.read()
-
-    #determine method name and arg count to group test cases correctly
     method_name, _ = backend.analyze_code_structure(code)
     if method_name == "unknown":
         return jsonify({"output": "Error: could not find 'class Solution' or method."})
 
-    logs.append(f"Running {len(test_cases)} test cases...")
 
-    #OFFLINE FIX FROM FIRST COMMIT. now the community olutions are saved locally
+    logs.append(f"Running {len(test_cases)} test cases...")
     filename_base = slug.replace('-', '_')
     json_path = os.path.join(backend.WORKSPACE_DIR, f"{filename_base}.json")
     
@@ -169,10 +197,11 @@ def run_tests():
         except Exception as e:
             logs.append(f"Warning: Could not read cache ({e})")
 
-    #o if it's missing from cache, try the network (online mode)
+    
     if not md_content:
         logs.append("Community solution not in cache. Fetching from network...")
         md_content = backend.fetch_community_solution(slug)
+    
     reference_code = backend.extract_code_block(md_content) if md_content else None
     
     if reference_code:
@@ -180,12 +209,9 @@ def run_tests():
     else:
         logs.append("Warning: No Ground Truth available (Offline & no cache).")
 
-    #generate and execute the test script
-    #Also custum test cases!! yay
     full_script = backend.generate_test_script(filepath, method_name, test_cases, reference_code)
-
     try:
-        
+        import subprocess
         res = subprocess.run([sys.executable, "-c", full_script], capture_output=True, text=True)
         output = "\n".join(logs) + "\n\n" + res.stdout
         
@@ -195,7 +221,6 @@ def run_tests():
         return jsonify({"output": output})
     except Exception as e:
         return jsonify({"output": f"Execution Error: {e}"})
-    
 
 @app.route('/api/solution/<slug>')
 def get_community_solution(slug):

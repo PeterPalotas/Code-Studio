@@ -104,18 +104,11 @@
     <div id="sidebar">
         <div class="sidebar-header">Problems</div>
         <div style="padding: 10px; border-bottom: 1px solid var(--border);">
-            <input type="text" id="problem-search" placeholder="Search problems..." 
-                style="width: 100%; padding: 8px; background: #1a1a1a; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; font-size: 13px;">
+            <input type="text" id="global-search" placeholder="Search 3000+ problems..." 
+                style="width: 100%; padding: 8px; background: #1a1a1a; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;">
         </div>
         <div id="problem-list">
-            {% for slug in problems %}
-                <div class="problem-item" id="item-{{ slug }}" onclick="loadProblem('{{ slug }}', this)">
-                    <span class="status-icon">
-                        {% if slug in downloaded %}✔{% endif %}
-                    </span>
-                    {{ slug }}
-                </div>
-            {% endfor %}
+            <div style="padding: 20px; color: #888; font-size: 12px;">Initializing problem set...</div>
         </div>
     </div>
 
@@ -174,12 +167,16 @@
         let argCount = 0;
 
         async function loadProblem(slug, element) {
+            
             document.querySelectorAll('.problem-item').forEach(el => el.classList.remove('active'));
             element.classList.add('active');
 
             document.getElementById('problem-title').innerText = "Loading...";
             document.getElementById('description-panel').innerHTML = "<p>Loading...</p>";
             document.getElementById('console-output').innerText = "";
+            
+            document.getElementById('btn-open').disabled = true;
+            document.getElementById('btn-run').disabled = true;
             
             try {
                 const response = await fetch(`/api/load/${slug}`);
@@ -189,24 +186,37 @@
                 currentSlug = slug;
                 currentFilepath = data.filepath;
                 
-                const lines = data.testcases_raw.trim().split('\n');
+                argCount = data.arg_count || 1; 
+
+                const rawLines = data.testcases_raw.trim().split('\n').filter(l => l.trim());
+                testCases = groupTestCases(rawLines, argCount); 
                 
-               testCases = lines.map(line => [JSON.parse(line)]); 
                 activeTestCaseIndex = 0;
 
                 document.getElementById('problem-title').innerText = data.title;
                 document.getElementById('description-panel').innerHTML = data.content;
+                
                 document.getElementById('btn-open').disabled = false;
                 document.getElementById('btn-run').disabled = false;
 
                 renderTabs();
                 renderInputs();
-
             } catch (err) {
                 document.getElementById('description-panel').innerHTML = `<p style="color:#ff6b6b">Error: ${err.message}</p>`;
             }
         }
 
+        function groupTestCases(lines, count) {
+            const grouped = [];
+            for (let i = 0; i < lines.length; i += count) {
+                const chunk = lines.slice(i, i + count).map(line => {
+                    try { return JSON.parse(line); } 
+                    catch { return line; }
+                });
+                if (chunk.length === count) grouped.push(chunk);
+            }
+            return grouped;
+        }
         function renderTabs() {
             const container = document.getElementById('testcase-tabs');
             const plusBtn = `<button onclick="addTestCase()" style="background: #333; color: white; border: 1px solid #444; padding: 2px 8px; cursor: pointer;">+</button>`;
@@ -239,7 +249,7 @@
                 const input = document.createElement('input');
                 input.type = 'text';
                 input.value = JSON.stringify(val);
-                input.style = "width: 100%; background: #1a1a1a; color: #4caf50; border: 1px solid #444; font-family: monospace; padding: 5px; margin-bottom: 10px;";
+
                 
                 input.onchange = (e) => {
                     try {
@@ -330,26 +340,95 @@
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-        const searchInput = document.getElementById('problem-search');
-        const problemItems = document.querySelectorAll('.problem-item');
+        let allProblems = [];
+        let downloadedSlugs = new Set();
 
-        searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase().trim();
 
-            problemItems.forEach(item => {
-                const slug = item.textContent.toLowerCase();
+        async function initProblemList() {
+            const listElement = document.getElementById('problem-list');
+            try {
+                const resp = await fetch('/api/problems');
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error);
+
+                all_problems_data = data.all || [];
+                downloadedSlugs = new Set(data.downloaded || []);
                 
-                if (slug.includes(query)) {
-                    item.style.display = 'block';
-                } else {
-                    item.style.display = 'none';
-                }
-            });
-        });
-    });
+                renderFilteredList(""); 
+            } catch (err) {
+                console.error("Offline or API Error:", err);
+                listElement.innerHTML = "<div style='padding:20px; color:#ce9178;'>Offline Mode: Only cached problems available.</div>";
+            }
+        }
 
-        
+        function renderFilteredList(query) {
+            const list = document.getElementById('problem-list');
+            const queryLower = query.toLowerCase().trim();
+
+            const filtered = all_problems_data.filter(p => 
+                p.title.toLowerCase().includes(queryLower) || 
+                p.titleSlug.toLowerCase().includes(queryLower)
+            ).slice(0, 50);
+
+            if (filtered.length === 0) {
+                list.innerHTML = `<div style="padding:20px; color:#666;">No problems found ${query ? "matching '" + query + "'" : ""}.</div>`;
+                return;
+            }
+
+            list.innerHTML = ""; 
+            filtered.forEach(p => {
+                const isDownloaded = downloadedSlugs.has(p.titleSlug);
+                const item = document.createElement('div');
+                item.className = `problem-item ${currentSlug === p.titleSlug ? 'active' : ''}`;
+                
+                item.innerHTML = `
+                    <span class="status-icon">${isDownloaded ? '✔' : ''}</span>
+                    <span style="color: ${getDiffColor(p.difficulty)}; margin-right: 5px;">●</span>
+                    ${p.title}
+                `;
+                
+                item.onclick = () => loadProblem(p.titleSlug, item);
+                list.appendChild(item);
+            });
+        }
+
+        function getDiffColor(diff) {
+            if (diff === 'Easy') return '#4caf50';
+            if (diff === 'Medium') return '#ffb74d';
+            return '#f44336';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const searchInput = document.getElementById('global-search');
+            if (searchInput) {
+                searchInput.addEventListener('input', (e) => {
+                    renderFilteredList(e.target.value.trim());
+                });
+            }
+            initProblemList(); 
+        });
+
+        async function openVSCode() {
+            if (!currentFilepath) {
+                alert("No file path found for this problem.");
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/open', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filepath: currentFilepath }) // Send the path saved in loadProblem
+                });
+                
+                const data = await response.json();
+                if (data.error) {
+                    alert("Error opening VS Code: " + data.error);
+                }
+            } catch (err) {
+                console.error("Failed to open VS Code:", err);
+            }
+        }
     </script>
 </body>
 </html>

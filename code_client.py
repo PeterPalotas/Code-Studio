@@ -53,6 +53,34 @@ def fetch_problem(title_slug):
         return None    
 
 
+def fetch_all_problems(limit=3000):
+    url = "https://leetcode.com/graphql"
+    query = """
+    query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) {
+      problemsetQuestionList: questionList(
+        categorySlug: $categorySlug
+        limit: $limit
+        skip: $skip
+        filters: $filters
+      ) {
+        questions: data {
+          title
+          titleSlug
+          difficulty
+        }
+      }
+    }
+    """
+    try:
+        resp = requests.post(url, json={
+            "query": query, 
+            "variables": {"categorySlug": "", "limit": limit, "skip": 0, "filters": {}}
+        }, headers={"User-Agent": "Mozilla/5.0"})
+        return resp.json()['data']['problemsetQuestionList']['questions']
+    except Exception as e:
+        print(f"[!] Error fetching problem list: {e}")
+        return []
+
 #this is the piece of code that tries to turn the best solution into runnable python code. thsi way we can test the test cases <3
 def analyze_code_structure(code):
     """Finds method name and number of arguments from the class definition."""
@@ -290,6 +318,7 @@ def fetch_community_solution(question_slug):
 
 def extract_code_block(markdown_text):
     
+    
     #scans markdown for a python code block
     #the most importnant thing is that it unescapes literal newlines and strips junk
     
@@ -299,6 +328,7 @@ def extract_code_block(markdown_text):
     
     best_candidate = None
 
+    
     #in the first pass look for explicit 'python' tags
     for lang, code in matches:
         if lang.lower() in ['python', 'python3']:
